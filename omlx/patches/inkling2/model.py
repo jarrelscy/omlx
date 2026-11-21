@@ -27,7 +27,7 @@ import mlx.nn as nn
 from mlx_lm.models.base import BaseModelArgs
 from mlx_lm.models.cache import ArraysCache, CacheList, KVCache
 
-from . import kernels
+from . import fast_decode, kernels
 from .loader import sanitize_weights
 from .vision import VisionArgs, VisionTower
 
@@ -655,6 +655,8 @@ class Inkling2Layer(nn.Module):
         """``h``: partial block sum [B, L, H] bf16. ``blocks``: list of unit-RMS
         FP32 completed blocks; extended in place at a block boundary.
         ``bank``: the previous loop pass's ``(blocks, partial_n)`` messages."""
+        if fast_decode.eligible(self, h, cache):
+            return fast_decode.fast_visit(self, h, blocks, cache, bank)
         b, length, hidden = h.shape
         kv = cache[0] if cache is not None else None
         conv = cache[1] if cache is not None else None
@@ -825,7 +827,22 @@ class Model(nn.Module):
             **kwargs,
         )
 
-    def forward(
+    def forward(self, inputs, cache=None, input_embeddings=None, **kwargs):
+        if not fast_decode._TIMING:
+            return self._forward(inputs, cache, input_embeddings, **kwargs)
+        import time as _time
+
+        t0 = _time.perf_counter()
+        mx.synchronize()
+        t1 = _time.perf_counter()
+        out = self._forward(inputs, cache, input_embeddings, **kwargs)
+        mx.eval(out.logits if hasattr(out, "logits") else out)
+        t2 = _time.perf_counter()
+        n = int(inputs.shape[1]) if inputs is not None and inputs.ndim == 2 else -1
+        fast_decode.record_timing(n, t1 - t0, t2 - t1)
+        return out
+
+    def _forward(
         self,
         inputs,
         cache=None,
