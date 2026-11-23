@@ -39,6 +39,8 @@ class TestStatusEndpoint:
         assert data["waiting_requests"] == 0
         assert "version" in data
         assert "uptime_seconds" in data
+        assert data["live"] == {"prefilling": [], "generating": []}
+        assert "last_request" in data
 
     def test_returns_pool_info(self, client):
         """When engine pool exists, return model and memory stats."""

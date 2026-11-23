@@ -3489,7 +3489,31 @@ async def server_status(_: bool = Depends(verify_api_key)):
         ),
         "custom_kernels": native_kernel_status(),
         "ane_prefill": _ane_prefill_status(pool),
+        "live": _live_requests(),
+        "last_request": metrics.last_request,
     }
+
+
+def _live_requests() -> dict:
+    """The requests prefilling and generating now, with their current speeds, for desktop widgets.
+
+    The same rows as the admin dashboard's Active Models card, which needs an admin login.
+    """
+    prefilling: list = []
+    generating: list = []
+    try:
+        from .admin.routes import _build_active_models_data
+
+        for model in _build_active_models_data().get("models", []):
+            for row in model.get("prefilling", []):
+                prefilling.append({"model": model.get("id"), "processed": row.get("processed"),
+                                   "total": row.get("total"), "tokens_per_second": row.get("speed")})
+            for row in model.get("generating", []):
+                generating.append({"model": model.get("id"), "generated_tokens": row.get("generated_tokens"),
+                                   "tokens_per_second": row.get("tokens_per_second")})
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Live request rows unavailable: %s", exc)
+    return {"prefilling": prefilling, "generating": generating}
 
 
 def _ane_prefill_status(pool) -> dict:

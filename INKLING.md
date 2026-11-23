@@ -77,3 +77,19 @@ Inkling's chat template ignores `enable_thinking`. It reads `reasoning_effort` (
 
 At 0 it still writes a short reasoning block. FrontierOS (branch `local-inkling`) sends this setting and uses
 native tool calls with Inkling.
+
+## 6. Desktop widget
+
+`apps/inkling-widget` is a small desktop window that shows the server's status every 2 seconds: the loaded
+model, its loop passes and whether the drafter is on, requests, live decode and prefill speed graphs, cache
+reuse, memory and GPU. It reads `GET /api/status`, which now includes the requests running now with their
+speeds (`live`) and the speeds of the last finished request (`last_request`). Build it with the Command Line
+Tools:
+
+```sh
+apps/inkling-widget/build.sh            # builds ~/Applications/Inkling Widget.app
+open ~/Applications/Inkling\ Widget.app
+```
+
+Drag it to move it; right-click for "Keep on top", the admin page and "Quit". For another server,
+`defaults write ai.omlx.inkling-widget url http://<host>:8000/api/status`.

@@ -13,6 +13,19 @@ from omlx.server_metrics import ServerMetrics, get_server_metrics, reset_server_
 class TestServerMetrics:
     """Tests for ServerMetrics class."""
 
+    def test_last_request_holds_the_latest_speeds(self):
+        """The latest request's own prefill and decode speeds, for live displays."""
+        metrics = ServerMetrics()
+        assert metrics.last_request is None
+        metrics.record_request_complete(1000, 50, cached_tokens=200, prefill_duration=2.0, generation_duration=1.0)
+        last = metrics.last_request
+        assert last["prefilled_tokens"] == 800
+        assert last["prefill_tps"] == 400.0
+        assert last["decode_tps"] == 50.0
+        metrics.record_request_complete(10, 0, prefill_duration=0.0, generation_duration=0.0)
+        assert metrics.last_request["prefill_tps"] is None
+        assert metrics.last_request["decode_tps"] is None
+
     def test_initial_snapshot(self):
         """Test that initial snapshot has all zero values."""
         metrics = ServerMetrics()

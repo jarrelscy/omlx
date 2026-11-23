@@ -72,6 +72,7 @@ class ServerMetrics:
         self._alltime_per_model: Dict[str, Dict[str, Any]] = {}
 
         self._start_time = time.time()
+        self.last_request: Optional[Dict[str, Any]] = None
         self._last_save_time = time.time()
 
         # Load persisted all-time stats
@@ -173,6 +174,17 @@ class ServerMetrics:
     ) -> None:
         """Record a completed request. Thread-safe."""
         with self._lock:
+            # The latest request's own speeds, for live displays.
+            prefilled = max(0, prompt_tokens - cached_tokens)
+            self.last_request = {
+                "completed_at": time.time(),
+                "prompt_tokens": prompt_tokens,
+                "prefilled_tokens": prefilled,
+                "prefill_seconds": round(prefill_duration, 3),
+                "prefill_tps": round(prefilled / prefill_duration, 1) if prefill_duration > 0 else None,
+                "completion_tokens": completion_tokens,
+                "decode_tps": round(completion_tokens / generation_duration, 1) if generation_duration > 0 else None,
+            }
             # Session counters
             self.total_prompt_tokens += prompt_tokens
             self.total_completion_tokens += completion_tokens
