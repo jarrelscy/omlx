@@ -40,18 +40,22 @@ func availableGiB() -> Double? {
     return pages * Double(vm_kernel_page_size) / 1_073_741_824
 }
 
-/// What the model folder says about the Inkling model: its loop passes and whether the drafter is on.
-func modelNotes(_ model: String) -> String {
+/// What the model folder says about the Inkling model: its loop passes and whether the drafter is on. `folder` is
+/// the model's own folder when the server reports it (mkserve, which always drafts), else oMLX's model folder.
+func modelNotes(_ model: String, folder given: String? = nil) -> String {
     let home = FileManager.default.homeDirectoryForCurrentUser.path
     var notes: [String] = []
-    let folder = "\(home)/.omlx/models/\(model)"
+    let folder = given ?? "\(home)/.omlx/models/\(model)"
+    if given != nil { notes.append((folder as NSString).lastPathComponent) }
     if let link = try? FileManager.default.destinationOfSymbolicLink(atPath: folder) { notes.append((link as NSString).lastPathComponent) }
     if let data = FileManager.default.contents(atPath: folder + "/config.json"),
        let config = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
        let passes = num(dict(dict(config["text_config"])["loop_config"])["num_passes"]) {
         notes.append("\(Int(passes)) loops")
     }
-    if let data = FileManager.default.contents(atPath: "\(home)/.omlx/model_settings.json"),
+    if given != nil {
+        notes.append(FileManager.default.fileExists(atPath: folder + "/mtp.safetensors") ? "drafter on" : "drafter off")
+    } else if let data = FileManager.default.contents(atPath: "\(home)/.omlx/model_settings.json"),
        let settings = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
         let on = (dict(dict(settings["models"])[model])["mtp_enabled"] as? Bool) ?? false
         notes.append("drafter " + (on ? "on" : "off"))
@@ -390,11 +394,13 @@ final class Widget: NSObject, NSApplicationDelegate {
 
         add("● ", monoBold, active > 0 || loading > 0 ? .systemOrange : (models.isEmpty ? .systemGray : .systemGreen))
         add("Inkling  ", NSFont.systemFont(ofSize: 13, weight: .semibold), white)
-        add("oMLX \(m["version"] as? String ?? "") · up \(duration(num(m["uptime_seconds"])))\n", mono, grey)
+        let mk = (m["server"] as? String) == "mkserve"
+        add((mk ? "megakernel \(m["engine"] as? String ?? "")" : "oMLX \(m["version"] as? String ?? "")")
+            + " · up \(duration(num(m["uptime_seconds"])))\n", mono, grey)
 
         let model = (m["default_model"] as? String) ?? models.first ?? ""
         row("MODEL", models.isEmpty ? (loading > 0 ? "loading…" : "none loaded") : "\(models.joined(separator: ", "))"
-            + (model.isEmpty ? "" : "\n\t\(modelNotes(model))"), color: models.isEmpty ? .systemYellow : white)
+            + (model.isEmpty ? "" : "\n\t\(modelNotes(model, folder: (m["model_dir"] as? String).flatMap { $0.isEmpty ? nil : $0 }))"), color: models.isEmpty ? .systemYellow : white)
         row("REQUESTS", "\(Int(active)) processing · \(Int(waiting)) queued · \(Int(num(m["total_requests"]) ?? 0)) served",
             color: waiting > 0 ? .systemYellow : white)
         if active > 0 {
@@ -407,7 +413,8 @@ final class Widget: NSObject, NSApplicationDelegate {
         row("PREFILL", "avg \(rate(num(m["avg_prefill_tps"]))) tok/s this session")
         row("SESSION", "\(compact(generated)) generated · \(compact(num(m["total_prompt_tokens"]))) prompt"
             + " · \(rate(num(m["cache_efficiency"])))% from cache")
-        row("MEMORY", "models \(m["model_memory_used_formatted"] as? String ?? "–") of \(m["model_memory_max_formatted"] as? String ?? "–")"
+        row("MEMORY", (mk ? "context \(compact(num(m["max_context"]))) tokens"
+                           : "models \(m["model_memory_used_formatted"] as? String ?? "–") of \(m["model_memory_max_formatted"] as? String ?? "–")")
             + " · free \(rate(availableGiB())) GiB")
         var system = "GPU \(gpuPercent().map(String.init) ?? "–")%"
         if let b = batteryText() { system += " · " + b }
